@@ -63,6 +63,39 @@ interface PixelResize {
   height: number;
 }
 
+function isScrollableOverflow(value: string): boolean {
+  return value === "auto" || value === "scroll" || value === "overlay";
+}
+
+function canConsumeWheel(
+  element: HTMLElement,
+  deltaX: number,
+  deltaY: number,
+): boolean {
+  const style = window.getComputedStyle(element);
+  const dominantVertical = Math.abs(deltaY) >= Math.abs(deltaX);
+
+  if (dominantVertical) {
+    if (
+      !isScrollableOverflow(style.overflowY) ||
+      element.scrollHeight <= element.clientHeight + 1
+    ) {
+      return false;
+    }
+    if (deltaY < 0) return element.scrollTop > 0;
+    return element.scrollTop + element.clientHeight < element.scrollHeight - 1;
+  }
+
+  if (
+    !isScrollableOverflow(style.overflowX) ||
+    element.scrollWidth <= element.clientWidth + 1
+  ) {
+    return false;
+  }
+  if (deltaX < 0) return element.scrollLeft > 0;
+  return element.scrollLeft + element.clientWidth < element.scrollWidth - 1;
+}
+
 export function GridDashboard({
   layout,
   cols = 12,
@@ -108,6 +141,35 @@ export function GridDashboard({
     const observer = new ResizeObserver(update);
     observer.observe(node);
     return () => observer.disconnect();
+  }, []);
+
+  // Keep wheel scrolling inside widgets from chaining into the workspace.
+  useEffect(() => {
+    const host = containerRef.current;
+    if (!host) return;
+
+    const onWheel = (event: WheelEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+
+      const item = target.closest(".grid-dashboard-item");
+      if (!(item instanceof HTMLElement) || !host.contains(item)) return;
+
+      let node: HTMLElement | null =
+        target instanceof HTMLElement ? target : target.parentElement;
+      while (node && item.contains(node)) {
+        if (canConsumeWheel(node, event.deltaX, event.deltaY)) {
+          return;
+        }
+        if (node === item) break;
+        node = node.parentElement;
+      }
+
+      event.preventDefault();
+    };
+
+    host.addEventListener("wheel", onWheel, { passive: false });
+    return () => host.removeEventListener("wheel", onWheel);
   }, []);
 
   useEffect(() => {

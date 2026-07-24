@@ -67,33 +67,52 @@ function isScrollableOverflow(value: string): boolean {
   return value === "auto" || value === "scroll" || value === "overlay";
 }
 
+function elementHasScrollbar(element: HTMLElement, vertical: boolean): boolean {
+  if (vertical) {
+    if (element.scrollHeight <= element.clientHeight + 1) return false;
+    return isScrollableOverflow(window.getComputedStyle(element).overflowY);
+  }
+  if (element.scrollWidth <= element.clientWidth + 1) return false;
+  return isScrollableOverflow(window.getComputedStyle(element).overflowX);
+}
+
 function canConsumeWheel(
   element: HTMLElement,
   deltaX: number,
   deltaY: number,
 ): boolean {
-  const style = window.getComputedStyle(element);
   const dominantVertical = Math.abs(deltaY) >= Math.abs(deltaX);
+  if (!elementHasScrollbar(element, dominantVertical)) {
+    return false;
+  }
 
   if (dominantVertical) {
-    if (
-      !isScrollableOverflow(style.overflowY) ||
-      element.scrollHeight <= element.clientHeight + 1
-    ) {
-      return false;
-    }
     if (deltaY < 0) return element.scrollTop > 0;
     return element.scrollTop + element.clientHeight < element.scrollHeight - 1;
   }
 
-  if (
-    !isScrollableOverflow(style.overflowX) ||
-    element.scrollWidth <= element.clientWidth + 1
-  ) {
-    return false;
-  }
   if (deltaX < 0) return element.scrollLeft > 0;
   return element.scrollLeft + element.clientWidth < element.scrollWidth - 1;
+}
+
+/** True when the widget contains any overflowing scroll container. */
+function hasScrollableArea(
+  root: HTMLElement,
+  deltaX: number,
+  deltaY: number,
+): boolean {
+  const vertical = Math.abs(deltaY) >= Math.abs(deltaX);
+  if (elementHasScrollbar(root, vertical)) return true;
+
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
+  let current = walker.nextNode();
+  while (current) {
+    if (current instanceof HTMLElement && elementHasScrollbar(current, vertical)) {
+      return true;
+    }
+    current = walker.nextNode();
+  }
+  return false;
 }
 
 export function GridDashboard({
@@ -143,7 +162,8 @@ export function GridDashboard({
     return () => observer.disconnect();
   }, []);
 
-  // Keep wheel scrolling inside widgets from chaining into the workspace.
+  // Contain wheel chaining only when the widget itself has a scrollbar.
+  // Widgets without overflow still let the workspace scroll.
   useEffect(() => {
     const host = containerRef.current;
     if (!host) return;
@@ -165,6 +185,12 @@ export function GridDashboard({
         node = node.parentElement;
       }
 
+      // No scrollbar in this widget → allow bubbling to the workspace.
+      if (!hasScrollableArea(item, event.deltaX, event.deltaY)) {
+        return;
+      }
+
+      // Has scrollbar but can't consume this delta (at edge) → block parent.
       event.preventDefault();
     };
 

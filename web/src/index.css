@@ -319,12 +319,7 @@ html[data-has-background="true"] .grid-dashboard-host {
   min-height: 0;
   flex: 1;
   overflow: hidden;
-  overscroll-behavior: contain;
   user-select: text;
-}
-
-.widget-body * {
-  overscroll-behavior: inherit;
 }
 
 .widget-body .widget-no-drag {
